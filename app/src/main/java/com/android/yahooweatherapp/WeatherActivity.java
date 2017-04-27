@@ -8,6 +8,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.util.Log;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -19,14 +20,14 @@ import com.android.volley.toolbox.Volley;
 
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.json.JSONTokener;
-import org.w3c.dom.Text;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 
 
 public class WeatherActivity extends AppCompatActivity {
+
+    public static final String TAG = "WeatherApp";
 
     private Button mQueryButton;
     private TextView mWeatherTextView;
@@ -57,10 +58,11 @@ public class WeatherActivity extends AppCompatActivity {
         mQueryButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick (View v) {
-                if (mQueryText.length() == 0) {
-                    Toast.makeText(getApplicationContext(), "You must enter a location.", Toast.LENGTH_LONG).show();
+                String input = mQueryText.getText().toString().trim();
+                if (input.length() == 0) {
+                    Toast.makeText(getApplicationContext(), "Please enter a location (e.g. 97140)", Toast.LENGTH_LONG).show();
                 } else {
-                    getWeatherInfo("foo");
+                    getWeatherInfoBetter(input);
                 }
             }
         });
@@ -68,18 +70,74 @@ public class WeatherActivity extends AppCompatActivity {
         mQueryWebView = (WebView) findViewById(R.id.query_web_view);
     }
 
-    private void getWeatherInfo(String input) {
+    private void getWeatherInfoBetter(String input) {
+        String url = getWeatherUrl(input);
+        if (url == null) {
+            Toast.makeText(getApplicationContext(), "Entered location could not be used, please try again.", Toast.LENGTH_LONG).show();
+        }
+
         RequestQueue queue = Volley.newRequestQueue(this);
-        String keyword = mQueryText.getText().toString();
-        String encodedCriteria = "";
-        String url = "https://query.yahooapis.com/v1/public/yql?q=";
-        String tempCriteria = "select * from weather.forecast where woeid in (select woeid from geo.places(1) where text='" + keyword +"')";
+
+        // Request a response from the provided URL.
+        JsonObjectRequest jsonRequest = new JsonObjectRequest
+                (Request.Method.GET, url, null, new Response.Listener<JSONObject>() {
+
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        String temperature;
+                        Log.d(TAG, "Weather API response: \n" + response.toString());
+
+                        try {
+                            JSONObject channel = response.getJSONObject("query").getJSONObject("results").getJSONObject("channel");
+                            temperature = channel.getJSONObject("item").getJSONObject("condition").getString("temp");
+                        } catch (JSONException e) {
+                            temperature = "-100";
+                            e.printStackTrace();
+                        }
+
+                        mWeatherTextView.setText("Temperature: " + temperature);
+                    }
+                }, new Response.ErrorListener() {
+
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        mWeatherTextView.setText("That didn't work: " + error.toString());
+                    }
+                });
+
+        // Add the request to the RequestQueue.
+        queue.add(jsonRequest);
+    }
+
+    private String getWeatherUrl(String input) {
+        final String baseUrl = "https://query.yahooapis.com/v1/public/yql?q=";
+
+        String encodedCriteria;
+        String tempCriteria = "select * from weather.forecast where woeid in (select woeid from geo.places(1) where text='" + input +"')";
         try {
             encodedCriteria = URLEncoder.encode(tempCriteria, "utf-8");
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
+            return null;
         }
-        url += encodedCriteria + "&format=json&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys";
+
+        return baseUrl + encodedCriteria + "&format=json&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys";
+    }
+
+    private void getWeatherInfo(String input) {
+        String url;
+        final String baseUrl = "https://query.yahooapis.com/v1/public/yql?q=";
+        RequestQueue queue = Volley.newRequestQueue(this);
+
+        String encodedCriteria = "";
+        String tempCriteria = "select * from weather.forecast where woeid in (select woeid from geo.places(1) where text='" + input +"')";
+        try {
+            encodedCriteria = URLEncoder.encode(tempCriteria, "utf-8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+            return;
+        }
+        url = baseUrl + encodedCriteria + "&format=json&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys";
 
         // Request a string response from the provided URL.
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
@@ -104,7 +162,7 @@ public class WeatherActivity extends AppCompatActivity {
                 mWeatherTextView.setText("That didn't work!");
             }
         });
-// Add the request to the RequestQueue.
+        // Add the request to the RequestQueue.
         queue.add(stringRequest);
     }
 }
